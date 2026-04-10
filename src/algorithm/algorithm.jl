@@ -11,7 +11,8 @@ function get_support(itemset::Vector{Int}, transactions::Vector{Set{Int}})
     return count
 end
 
-function ac_generator(G_i::Vector{Generator}, minsup_count::Int, transactions::Vector{Set{Int}})
+
+function ac_generator(G_i::Vector{Generator}, minsup_count::Int, transactions::Vector{Set{Int}}, current_i::Int, level_ref::Ref{Int})
     G_next = Vector{Generator}()
     n = length(G_i)
 
@@ -26,7 +27,20 @@ function ac_generator(G_i::Vector{Generator}, minsup_count::Int, transactions::V
 
                 #Bước 2: Cắt tỉa 1 - mọi tập con kích thước i phải nằm trong G_i
                 # (Lược bớt logic check tập con phức tạp ở Level 1 để chạy được trước)
-
+                is_valid = true
+                for drop_idx in 1:length(candidate_items)
+                    subset = copy(candidate_items)
+                    deleteat!(subset, drop_idx) # Tạo i-subset nhanh hơn list comprehension
+                    
+                    if !any(g -> g.items == subset, G_i)
+                        is_valid = false
+                        break
+                    end
+                end
+                
+                if !is_valid
+                    continue 
+                end
 
                 #Bước 3: Tính support và Cắt tỉa 2 (Support < minsup_count)
                 sup = get_support(candidate_items, transactions)
@@ -35,12 +49,18 @@ function ac_generator(G_i::Vector{Generator}, minsup_count::Int, transactions::V
                     #Bước 4: Cắt tỉa 3 - Support của ứng viên == Support của tập con?
                     is_useless = false
                     for gen in G_i
-                        #Nếu gen là tập con của candidate và có cùng support
+                       # Chỉ cần kiểm tra gen có là tập con của candidate không
+                        # (Vì gen nằm trong G_i nên chắc chắn nó là một i-subset)
                         if issubset(Set(gen.items), Set(candidate_items)) && gen.support == sup
                             is_useless = true
+                            
+                            # Cập nhật level nếu đây là lần cắt tỉa đầu tiên (Thuật toán 3, dòng 15-17)
+                            if level_ref[] == 0
+                                level_ref[] = current_i
+                            end
                             break
                         end
-                end
+                    end
 
                     # Chỉ thêm ứng viên vào G_next nếu không bị loại bỏ
                     if !is_useless
@@ -56,6 +76,11 @@ end
 
 function ac_closure!(generators::Vector{Generator}, transactions::Vector{Set{Int}})
     for p in generators
+# Nếu đã có closure (được tính theo rule level), thì bỏ qua việc tính lại closure
+        if p.closure !== nothing && !isempty(p.closure)
+            continue 
+        end
+
         p_set = Set(p.items)
         first_match = true
 
@@ -96,24 +121,46 @@ function a_close_main(filepath::String, minsup_ratio::Float64)
     # Thêm dòng này ngay sau khi kết thúc vòng lặp tạo G_1 và trước bước 2
     sort!(G_1, by = x -> x.items[1]) # Sắp xếp G_1 theo item để đảm bảo thứ tự cố định khi sinh G_2
 
-    # Bước 2: Sinh G_i từ G_{i-1} và tính closure, vòng lặp sinh ứng viên đến khi không còn generator nào nữa
-    all_generators = Vector{Generator}() # Tập hợp tất cả các generator đã tìm được
-    append!(all_generators, G_1) # Thêm G_1 vào tập hợp tất cả generator
+    # Fix Bug 3: Áp dụng cơ chế level để phân tách G và G' (Thuật toán 1)
+    all_generators_by_size = Dict{Int, Vector{Generator}}()
+    all_generators_by_size[1] = G_1
 
+    level_ref = Ref(0) # Khởi tạo biến level dùng chung
+    current_i = 1
     G_current = G_1
+
     while !isempty(G_current)
         # ac_closure!(G_current, transactions) # Tính closure cho các generator trong G_current
-        G_next = ac_generator(G_current, minsup_count, transactions) # Sinh G_{i+1} từ G_current
-        append!(all_generators, G_next) # Thêm G_{i+1} vào tập hợp tất cả generator
-        G_current = G_next # Cập nhật G_current để tiếp tục vòng lặp
+        G_next = ac_generator(G_current, minsup_count, transactions, current_i, level_ref)
+        if !isempty(G_next)
+            all_generators_by_size[current_i + 1] = G_next
+        end
+        G_current = G_next
+        current_i += 1
+        # append!(all_generators, G_next) # Thêm G_{i+1} vào tập hợp tất cả generator
+        # G_current = G_next # Cập nhật G_current để tiếp tục vòng lặp
+    end
+
+    # Tách G và G' dựa trên biến level (Thuật toán 1, dòng 10-19)
+    level = level_ref[]
+
+    all_final_generators = Vector{Generator}()
+    for (size_i, gens) in all_generators_by_size
+        for p in gens
+            if level > 2 && size_i < level - 1
+                # Thuộc tập G: Chúng tự là tập đóng của chính mình, không cần duyệt data
+                p.closure = Set(p.items)
+            end
+            push!(all_final_generators, p)
+        end
     end
 
     # Bước 3: Tính Closure cho toàn bộ generator còn sống
-    ac_closure!(all_generators, transactions) # Tính closure cho tất cả các generator đã tìm được
+    ac_closure!(all_final_generators, transactions) # Tính closure cho tất cả các generator đã tìm được
 
     # Bước 4: Lọc các bao đóng trùng lặp và trả về kết quả
     frequent_closed_itemsets = Dict{Set{Int}, Int}() # Sử dụng Dict để loại bỏ các bao đóng trùng lặp
-    for gen in all_generators
+    for gen in all_final_generators
         frequent_closed_itemsets[gen.closure] = gen.support # Lưu closure và support tương ứng
     end
 
