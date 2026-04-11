@@ -98,7 +98,7 @@ function ac_closure!(generators::Vector{Generator}, transactions::Vector{Set{Int
 end
 
 
-function a_close_main(filepath::String, minsup_ratio::Float64; use_optimization::Bool=true)
+function a_close_main(filepath::String, minsup_ratio::Float64, use_optimization::Bool=true)
     transactions = read_spmf(filepath)
     num_transactions = length(transactions)
     minsup_count = ceil(Int, minsup_ratio * num_transactions)
