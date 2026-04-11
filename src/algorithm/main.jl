@@ -30,7 +30,7 @@ function run_cli()
     
     # Đo thời gian chạy thực tế (rất hữu ích cho Chương 4)
     @time begin
-        results = a_close_main(input_filepath, minsup_ratio)
+        results = a_close_main(input_filepath, minsup_ratio, use_optimization=true) # Bật tối ưu hóa mặc định
     end
     
     write_spmf_output(results, output_filepath)

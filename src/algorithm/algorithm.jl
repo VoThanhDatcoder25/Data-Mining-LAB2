@@ -98,7 +98,7 @@ function ac_closure!(generators::Vector{Generator}, transactions::Vector{Set{Int
 end
 
 
-function a_close_main(filepath::String, minsup_ratio::Float64)
+function a_close_main(filepath::String, minsup_ratio::Float64; use_optimization::Bool=true)
     transactions = read_spmf(filepath)
     num_transactions = length(transactions)
     minsup_count = ceil(Int, minsup_ratio * num_transactions)
@@ -147,7 +147,8 @@ function a_close_main(filepath::String, minsup_ratio::Float64)
     all_final_generators = Vector{Generator}()
     for (size_i, gens) in all_generators_by_size
         for p in gens
-            if level > 2 && size_i < level - 1
+            # Áp dụng tối ưu khi flag use_optimization=true: Nếu đã vượt qua level, thì các generator còn lại tự là tập đóng của chính mình, không cần tính closure nữa
+            if use_optimization && level > 2 && size_i < level - 1
                 # Thuộc tập G: Chúng tự là tập đóng của chính mình, không cần duyệt data
                 p.closure = Set(p.items)
             end
